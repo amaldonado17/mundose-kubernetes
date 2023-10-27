@@ -1,0 +1,5 @@
+#Link con el uso e instalación de kubectl
+https://geekflare.com/es/kubectl-examples/
+
+#Comando para ver toda la documentación de las api's de kubernetes y poder entender el campo de apiversion de los manifiestos:
+kubectl api-resources
