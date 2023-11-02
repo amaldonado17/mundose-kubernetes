@@ -1,0 +1,33 @@
+apiVersion: apps/v1 # i se Usa apps/v1beta2 para versiones anteriores a 1.9.0
+kind: Deployment
+metadata:
+  name: web-ingress
+  labels:
+    app: mi-ingress
+spec:
+  selector:   #permite seleccionar un conjunto de objetos que cumplan las condicione
+    matchLabels:
+      app: mi-ingress
+  replicas: 4 # indica al controlador que ejecute 2 pods
+  template:   # Plantilla que define los containers
+    metadata:
+      labels:
+        app: mi-ingress
+    spec:
+      containers:
+      - name: apache-php
+        image: maldoariel/php-test
+        ports:
+        - containerPort: 80
+        
+---
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: web-ingress-service
+spec:
+  selector:
+    app: mi-ingress
+  ports:
+    - port: 80 # Default port for image
