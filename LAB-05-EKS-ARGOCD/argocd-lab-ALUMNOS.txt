@@ -1,0 +1,186 @@
+
+Requisitos:
+Tener instalado el binario de Helm https://helm.sh/docs/intro/install/
+Tener instalado cluster k8s
+Tener instalado el Binario de ArgoCD https://argo-cd.readthedocs.io/en/stable/cli_installation/
+
+
+------------
+Añadimos el repo de Helm
+-Para ver que repositorios tengo añadidos:
+helm repo list
+-Agregar Repo, luego verificar con el comando de arriba
+helm repo add argo https://argoproj.github.io/argo-helm
+
+-Descargar chart con comando pull para descargar  del repositorio e instalarlo, ver ultima versión disponible si no usar la del tutorial.
+
+helm pull argo/argo-cd --version 5.8.2
+
+-Descomprimimos el paquete TGZ del Chart descargado
+
+tar -zxvf argo-cd-5.8.2.tgz
+
+-Hacemos la instalación pasando parámetros de configuración para aprovechar y dejar nuestro repositorio ya configurado con las credenciales como template
+
+ microk8s.helm install argo-cd argo-cd/ \
+  --namespace argocd \
+  --create-namespace --wait \
+  --set configs.credentialTemplates.github.url=https://github.com/mi-repox \
+  --set configs.credentialTemplates.github.username=mi-user \
+  --set configs.credentialTemplates.github.password=mi-token
+
+#Primero indicamos el nombre de la instalación y el directorio en donde debe bucar helm los archivos para esto, en este caso coincide con argo-cd.
+Luego creamos el namespace el cual se podria crear antes tambien.
+El primer set le damos la url del repositorio, segundo nuestro usuario y tercero hay que usar un token como clave para el caso particular de github, es por seguridad.(https://docs.github.com/es/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
+En este caso como usamos microk8s se recomienda usar microk8s.helm, sino solo helm.
+La salida de esto una vez instalado nos dará lo siguiente:
+
+NAME: argo-cd
+LAST DEPLOYED: Tue Nov 14 10:02:37 2023
+NAMESPACE: argocd
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+In order to access the server UI you have the following options:
+
+1. kubectl port-forward service/argo-cd-argocd-server -n argocd 8080:443
+
+    and then open the browser on http://localhost:8080 and accept the certificate
+
+2. enable ingress in the values file `server.ingress.enabled` and either
+      - Add the annotation for ssl passthrough: https://argo-cd.readthedocs.io/en/stable/operator-manual/ingress/#option-1-ssl-passthrough
+      - Set the `configs.params."server.insecure"` in the values file and terminate SSL at your ingress: https://argo-cd.readthedocs.io/en/stable/operator-manual/ingress/#option-2-multiple-ingress-objects-and-hosts
+
+
+After reaching the UI the first time you can login with username: admin and the random password generated during the installation. You can find the password by running:
+
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+
+(You should delete the initial secret afterwards as suggested by the Getting Started Guide: https://argo-cd.readthedocs.io/en/stable/getting_started/#4-login-using-the-cli)
+
+
+-------------
+
+-Imprimimos en pantalla la contraseña del usuario "admin" por defecto que se ha generado automáticamente en la instalación
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
+
+-Levantamos un Port-Forward para poder acceder a ArgoCD UI desde localhost:8080
+
+kubectl port-forward service/argo-cd-argocd-server -n argocd 8080:443
+
+-Hacemos login en ArgoCD con la contraseña que hemos obtenido, tanto por web como por cli:
+argocd login localhost:8080
+Usuario es admin y la clave la impresa por pantalla en el punto anterior
+
+-Una vez que hemos hecho login satisfactoriamente cambiamos la contraseña generada por una que nos venga mejor, como por ejemplo "argocdpass":
+
+argocd account update-password
+
+
+** Podemos cambiar el servicio para acceder por NodePort, asi no usamos portforwarding(cuando editaos reemplazar la linea que dice ClusterIP por NodePort):
+
+amaldonado@microk8s:~$ kubectl get svc -n argocd
+NAME                                       TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)             AGE
+argo-cd-argocd-applicationset-controller   ClusterIP   10.152.183.191   <none>        7000/TCP            76m
+argo-cd-argocd-redis                       ClusterIP   10.152.183.122   <none>        6379/TCP            76m
+argo-cd-argocd-dex-server                  ClusterIP   10.152.183.102   <none>        5556/TCP,5557/TCP   76m
+argo-cd-argocd-repo-server                 ClusterIP   10.152.183.176   <none>        8081/TCP            76m
+argo-cd-argocd-server                      ClusterIP   10.152.183.192   <none>        80/TCP,443/TCP      76m
+amaldonado@microk8s:~$ kubectl edit svc argo-cd-argocd-server -n argocd
+service/argo-cd-argocd-server edited
+amaldonado@microk8s:~$ kubectl get svc -n argocd
+NAME                                       TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                      AGE
+argo-cd-argocd-applicationset-controller   ClusterIP   10.152.183.191   <none>        7000/TCP                     79m
+argo-cd-argocd-redis                       ClusterIP   10.152.183.122   <none>        6379/TCP                     79m
+argo-cd-argocd-dex-server                  ClusterIP   10.152.183.102   <none>        5556/TCP,5557/TCP            79m
+argo-cd-argocd-repo-server                 ClusterIP   10.152.183.176   <none>        8081/TCP                     79m
+argo-cd-argocd-server                      NodePort    10.152.183.192   <none>        80:32149/TCP,443:30466/TCP   79m
+amaldonado@microk8s:~$ kubectl get svc -n argocd
+
+
+
+------ Comienzo de Deploys con ArgoCD--------
+
+-ArgoCd debe conecatrse para trbajar con un repositorio que para el es la fuente de todo en donde va a ir creando los deploy de las apps en el cluster.
+
+-Ejemplo para crear un repo por cli:
+
+argocd repo add https://github.com/amaldonado17/mundose-kubernetes.git
+
+-Creamos un proyecto de pruebas en el que solo se puedan crear aplicaciones en el namespace "testing" y con determinado repositorio de código, con esto damos mas seguridad en un entorno de trabajo:
+
+argocd proj create testing -d https://kubernetes.default.svc,testing -s https://github.com/amaldonado17/mundose-kubernetes.git
+
+
+-Si quisieramos crear un proyecto en el que esté permitido cualquier namespace y cualquier repositorio
+argocd proj create system-admin -d https://kubernetes.default.svc,* -s '*'
+
+
+-Creamos el Namespace "testing" que sera el que usaremos para desplegar las aplicaciones
+
+kubectl create ns testing
+
+
+-Ahora creamos nuestra primera aplicación de pruebas en el proyecto que hemos creado anteriormente
+
+argocd app create web01 \
+  --repo https://github.com/amaldonado17/mundose-kubernetes.git \
+  --revision main --path ./LAB-02 \
+  --dest-server https://kubernetes.default.svc \
+  --dest-namespace testing \
+  --project testing
+**Este ejemplo no tiene sincronización automatica asi que la haceos a mano y recien ahi empieza a crear todos los pods y servicios.
+
+
+
+-Ahora creamos otra app, pero esta vez con sincronización automática, va a fallar porque crea un pv y eso lo hace fuera del namespace
+
+argocd app create nginx-persistent \
+  --repo https://github.com/amaldonado17/mundose-kubernetes.git \
+  --revision main --path ./LAB-03 \
+  --dest-server https://kubernetes.default.svc \
+  --dest-namespace testing \
+  --sync-policy automated \
+  --project testing
+
+**PAra que funcione usamos el proyecto system-admin que no tiene restricciones:
+
+argocd app create nginx-persistent \
+  --repo https://github.com/amaldonado17/mundose-kubernetes.git \
+  --revision main --path ./LAB-03 \
+  --dest-server https://kubernetes.default.svc \
+  --dest-namespace testing \
+  --sync-policy automated \
+  --project system-admin
+
+
+
+
+----
+
+**Algunos tips para administrar y eliminar todo lo referido a ArgoCD:
+
+-Sincronizar desde la CLI
+
+argocd app sync nombre-app
+
+-Si queremos saber el estatus de la App
+
+argocd app get nombre-app
+
+-Ahora para eliminar las Apps
+
+argocd app delete nombre-app
+
+-Podemos listar los Charts que tenemos instalados para luego eliminar todo argocd
+
+helm list -n argocd
+
+-Desinstalamos todo!
+
+helm uninstall argo-cd -n argocd
+
+-Ahora podemos eliminar los Namespaces que hemos creado
+
+kubectl delete ns argocd testing
