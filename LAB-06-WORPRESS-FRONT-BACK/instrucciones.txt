@@ -1,0 +1,11 @@
+#Crear el directorio en tu nodo local para volumenes persistentes:
+
+sudo mkdir -p /mnt/data/wordpress-pv
+sudo chmod 777 /mnt/data/wordpress-pv
+
+
+sudo mkdir -p /mnt/data/mysql-pv
+sudo chmod 777 /mnt/data/mysql-pv
+
+
+# Tener en cuenta de desplegar primero el backend(1-pv, 2-pvc, 3-deploy) Luego el Frontend tambien en ese orden
